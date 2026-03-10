@@ -66,6 +66,7 @@ players_number = 3
 max_players_number = 4
 tanks_number = 2
 max_tanks_number = 5
+total_rounds = 5          # number of rounds that make up one full match
 
 
 # PyGame fonts

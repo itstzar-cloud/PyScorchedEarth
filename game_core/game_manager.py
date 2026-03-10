@@ -32,19 +32,37 @@ class GameManager:
         self.players_number = player_number
         self.tank_number = tank_number
         self.wind = 0.0
+        # Scoring / rounds
+        self.scores = {}          # color -> win count, persists across rounds
+        self.round_colors = []    # ordered list of player colors for this match
+        self.current_round = 0
 
-    def reinitialize_players(self):
+    def reinitialize_players(self, new_game=True):
         """
-        Reinitialize available tanks in the game
+        Reinitialize tanks for a new round (or a brand-new match).
+        :param new_game: True  → pick fresh random colours and reset all scores/rounds
+                         False → keep existing colours and scores, just increment round
         :return: none
         """
         self.ground = Ground(self.game_display)
         self.players = []
-        left_colors = player_colors[:]
-        for i in range(self.players_number):
-            chosen_color = choice(left_colors)
-            left_colors.remove(chosen_color)
-            self.players.append(Player(self.game_display, self.tank_number, chosen_color, i))
+
+        if new_game:
+            # Choose colours for the whole match and reset state
+            left_colors = player_colors[:]
+            self.round_colors = []
+            for _ in range(self.players_number):
+                chosen_color = choice(left_colors)
+                left_colors.remove(chosen_color)
+                self.round_colors.append(chosen_color)
+            self.scores = {color: 0 for color in self.round_colors}
+            self.current_round = 0
+
+        self.current_round += 1
+
+        for i, color in enumerate(self.round_colors):
+            self.players.append(Player(self.game_display, self.tank_number, color, i))
+
         init_tanks_positions = []
         for player in self.players:
             player.initialize_tanks(init_tanks_positions, self.ground)
@@ -351,6 +369,79 @@ class GameManager:
 
         self.players = left_players
 
+    def draw_scoreboard(self, winner_color, match_over):
+        """
+        Draw a semi-transparent overlay with round result and running scores.
+        :param winner_color: colour tuple of the round winner, or None on draw
+        :param match_over:   True when all rounds have been played
+        """
+        # Semi-transparent dark overlay
+        overlay = pygame.surface.Surface((display_width, display_height))
+        overlay.set_alpha(170)
+        overlay.fill(black)
+        self.game_display.blit(overlay, (0, 0))
+
+        cx = display_width // 2
+        cy = display_height // 2
+
+        # ── Title ──────────────────────────────────────────────────────────────
+        if match_over:
+            top_score = max(self.scores.values()) if self.scores else 0
+            champs = [c for c, s in self.scores.items() if s == top_score]
+            title = "MATCH OVER  —  IT'S A DRAW!" if len(champs) > 1 else "MATCH OVER  —  CHAMPION!"
+        else:
+            title = f"ROUND  {self.current_round}  COMPLETE"
+
+        t_surf, t_rect = sys_text_object(title, white, FontSize.LARGE)
+        t_rect.center = (cx, cy - 220)
+        self.game_display.blit(t_surf, t_rect)
+
+        # ── Round winner ───────────────────────────────────────────────────────
+        if winner_color is not None:
+            label = "ROUND WINNER:" if not match_over else "MATCH WINNER:"
+            w_surf, w_rect = sys_text_object(label, white, FontSize.MEDIUM)
+            w_rect.center = (cx, cy - 145)
+            self.game_display.blit(w_surf, w_rect)
+            swatch_x = cx + w_rect.width // 2 - 5
+            pygame.draw.rect(self.game_display, winner_color,
+                             (swatch_x, cy - 162, 32, 32))
+            pygame.draw.rect(self.game_display, white,
+                             (swatch_x, cy - 162, 32, 32), 2)
+        else:
+            d_surf, d_rect = sys_text_object("ROUND DRAW", white, FontSize.MEDIUM)
+            d_rect.center = (cx, cy - 145)
+            self.game_display.blit(d_surf, d_rect)
+
+        # ── Scoreboard ─────────────────────────────────────────────────────────
+        hdr_surf, hdr_rect = sys_text_object("SCOREBOARD", white, FontSize.MEDIUM)
+        hdr_rect.center = (cx, cy - 85)
+        self.game_display.blit(hdr_surf, hdr_rect)
+
+        for i, (color, wins) in enumerate(self.scores.items()):
+            row_y = cy - 35 + i * 40
+            # Colour swatch
+            pygame.draw.rect(self.game_display, color,
+                             (cx - 95, row_y, 26, 26))
+            pygame.draw.rect(self.game_display, white,
+                             (cx - 95, row_y, 26, 26), 1)
+            # Win count
+            win_label = f"{wins}  win{'s' if wins != 1 else ''}"
+            s_surf, _ = sys_text_object(win_label, white, FontSize.SMALL)
+            self.game_display.blit(s_surf, (cx - 58, row_y + 3))
+            # Star for round winner
+            if color == winner_color:
+                star_surf, _ = sys_text_object("★", (255, 220, 0), FontSize.SMALL)
+                self.game_display.blit(star_surf, (cx + 60, row_y + 3))
+
+        # ── Instructions ───────────────────────────────────────────────────────
+        if match_over:
+            hint = "S  -  new match      Q  -  quit"
+        else:
+            hint = f"S  -  round {self.current_round + 1}      Q  -  quit"
+        h_surf, h_rect = sys_text_object(hint, green, FontSize.SMALL)
+        h_rect.center = (cx, cy + len(self.scores) * 40 + 10)
+        self.game_display.blit(h_surf, h_rect)
+
     def draw_all(self):
         """
         Draws all elements on display
@@ -376,12 +467,12 @@ class GameManager:
         angle_change = 0
         power_change = 0
         move_change = 0
+        winner_color = None
+        match_over = False
 
         while not game_exit:
             if game_over:
-                message_to_screen(self.game_display, "Game over", red, -50, FontSize.LARGE, sys_font=False)
-                message_to_screen(self.game_display, "S - play again", green, 50, sys_font=False)
-                message_to_screen(self.game_display, "Q - quit", green, 80, sys_font=False)
+                self.draw_scoreboard(winner_color, match_over)
                 pygame.display.update()
                 while game_over:
                     for event in pygame.event.get():
@@ -390,9 +481,14 @@ class GameManager:
                                 game_exit = True
                                 game_over = False
                             if event.key == pygame.K_s:
-                                self.reinitialize_players()
+                                if match_over:
+                                    self.reinitialize_players(new_game=True)
+                                else:
+                                    self.reinitialize_players(new_game=False)
                                 active_tank = self.players[0].next_active_tank()
                                 move_change = 0
+                                winner_color = None
+                                match_over = False
                                 game_exit = False
                                 game_over = False
                                 break
@@ -440,8 +536,12 @@ class GameManager:
 
             self.draw_all()
 
-            if len(self.players) <= 1:
+            if len(self.players) <= 1 and not game_over:
                 game_over = True
+                winner_color = self.players[0].color if len(self.players) == 1 else None
+                if winner_color is not None and winner_color in self.scores:
+                    self.scores[winner_color] += 1
+                match_over = self.current_round >= total_rounds
 
             if active_tank:
                 active_tank.show_tank_special()
