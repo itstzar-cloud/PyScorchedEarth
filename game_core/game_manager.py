@@ -147,48 +147,170 @@ class GameManager:
         for player in self.players:
             player.correct_tanks_heights(self.ground)
 
-    def fire_simple_shell(self, tank_object):
+    def _fly_shell(self, start_pos, speed, angle, color, dot_radius=4):
         """
-        Show animation of shooting simple shell
-        :param tank_object: tank object that shoots the shell
-        :return: none
+        Animate a single shell in flight. Returns collision point or None if out of bounds.
+        :param start_pos: (x, y) starting position
+        :param speed: initial shell speed
+        :param angle: launch angle (radians)
+        :param color: dot colour
+        :param dot_radius: drawn shell radius in pixels
+        :return: (x, y) collision point or None
         """
-        (power, gun_angle, fire_sound, color, gun_end_coord) = tank_object.get_init_data_for_shell()
-        pygame.mixer.Sound.play(fire_sound)
-        speed = min_shell_speed + shell_speed_step * power
-        shell_position = list(gun_end_coord)
+        shell_position = list(start_pos)
         elapsed_time = 0.1
 
-        fire = True
-
-        while fire:
+        while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     halt_whole_game()
 
-            prev_shell_position = list(shell_position)
-            vertical_speed = -((speed * cos(gun_angle)) - 10 * elapsed_time / 2)
-            horizontal_speed = (speed * sin(gun_angle)) + self.wind
+            prev_pos = list(shell_position)
+            vertical_speed = -((speed * cos(angle)) - 10 * elapsed_time / 2)
+            horizontal_speed = (speed * sin(angle)) + self.wind
             shell_position[0] += int(horizontal_speed * elapsed_time)
             shell_position[1] += int(vertical_speed * elapsed_time)
             elapsed_time += 0.1
 
             if shell_position[1] > 2 * display_height:
-                break
+                return None
 
-            collision_point = self.check_collision(prev_shell_position, shell_position)
-
+            collision_point = self.check_collision(prev_pos, shell_position)
             if collision_point:
-                animate_explosion(self.game_display, collision_point, self.strike_earth_sound, simple_shell_radius)
-                self.correct_ground(collision_point, simple_shell_radius)
-                self.apply_players_damages(collision_point, simple_shell_power, simple_shell_radius)
-                self.correct_tanks_heights()
-                fire = False
-            else:
-                pygame.draw.circle(self.game_display, color, (shell_position[0], shell_position[1]), 4)
+                return collision_point
 
+            pygame.draw.circle(self.game_display, color, (shell_position[0], shell_position[1]), dot_radius)
             pygame.display.update()
             self.clock.tick(60)
+
+    def _explode(self, point, weapon, sound=None):
+        """
+        Trigger explosion effects, ground correction, and player damage.
+        :param point: (x, y) explosion centre
+        :param weapon: WeaponDef to read power/radius from
+        :param sound: optional override sound; defaults to strike_earth_sound
+        """
+        snd = sound if sound else self.strike_earth_sound
+        animate_explosion(self.game_display, point, snd, weapon.radius)
+        self.correct_ground(point, weapon.radius)
+        self.apply_players_damages(point, weapon.power, weapon.radius)
+        self.correct_tanks_heights()
+
+    def fire_weapon(self, tank_object):
+        """
+        Dispatch firing to the correct method based on the tank's active weapon.
+        :param tank_object: the firing Tank instance
+        """
+        weapon = tank_object.get_weapon()
+        (power, gun_angle, fire_sound, color, gun_end_coord) = tank_object.get_init_data_for_shell()
+        pygame.mixer.Sound.play(fire_sound)
+        speed = min_shell_speed + shell_speed_step * power
+
+        if weapon.shell_type == 'simple':
+            self._fire_simple(gun_end_coord, speed, gun_angle, color, weapon)
+        elif weapon.shell_type == 'mirv':
+            self._fire_mirv(gun_end_coord, speed, gun_angle, color, weapon)
+        elif weapon.shell_type == 'napalm':
+            self._fire_napalm(gun_end_coord, speed, gun_angle, color, weapon)
+        elif weapon.shell_type == 'nuke':
+            self._fire_nuke(gun_end_coord, speed, gun_angle, color, weapon)
+
+    def _fire_simple(self, start_pos, speed, angle, color, weapon):
+        """Single shell that explodes on impact."""
+        collision_point = self._fly_shell(start_pos, speed, angle, color)
+        if collision_point:
+            self._explode(collision_point, weapon)
+
+    def _fire_mirv(self, start_pos, speed, angle, color, weapon):
+        """
+        Shell that flies to apogee then splits into 5 sub-warheads.
+        If it hits terrain before apogee it detonates like a normal shell.
+        """
+        shell_position = list(start_pos)
+        elapsed_time = 0.1
+        prev_vy = None
+        apogee_pos = None
+
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    halt_whole_game()
+
+            prev_pos = list(shell_position)
+            vy = -((speed * cos(angle)) - 10 * elapsed_time / 2)
+            vx = (speed * sin(angle)) + self.wind
+            shell_position[0] += int(vx * elapsed_time)
+            shell_position[1] += int(vy * elapsed_time)
+            elapsed_time += 0.1
+
+            if shell_position[1] > 2 * display_height:
+                return
+
+            collision_point = self.check_collision(prev_pos, shell_position)
+            if collision_point:
+                # Hit ground before apogee — detonate as normal shell
+                self._explode(collision_point, weapon, self.normal_strike_sound)
+                return
+
+            # Draw main shell (larger dot, cyan tint)
+            pygame.draw.circle(self.game_display, (0, 220, 255), (shell_position[0], shell_position[1]), 5)
+            pygame.display.update()
+            self.clock.tick(60)
+
+            # Apogee = vertical velocity flips from up to down
+            if prev_vy is not None and prev_vy < 0 <= vy:
+                apogee_pos = list(shell_position)
+                break
+            prev_vy = vy
+
+        if apogee_pos is None:
+            return
+
+        # Fire 5 sub-warheads spreading from apogee
+        sub_speed = speed * 0.65
+        spread_offsets = [-pi / 4, -pi / 8, 0, pi / 8, pi / 4]
+        for offset in spread_offsets:
+            sub_angle = angle + offset
+            cp = self._fly_shell(apogee_pos, sub_speed, sub_angle, (0, 220, 255), dot_radius=3)
+            if cp:
+                self._explode(cp, weapon, self.normal_strike_sound)
+
+    def _fire_napalm(self, start_pos, speed, angle, color, weapon):
+        """
+        Shell that bursts into a horizontal spray of fire clusters on impact.
+        """
+        collision_point = self._fly_shell(start_pos, speed, angle, orange)
+        if not collision_point:
+            return
+
+        # Five fire clusters spreading left/right from impact
+        spreads = [-80, -40, 0, 40, 80]
+        for spread in spreads:
+            cx = collision_point[0] + spread
+            cy = collision_point[1]
+            cluster_power = weapon.power // 3
+            cluster_radius = weapon.radius // 3
+            animate_explosion(self.game_display, (cx, cy), self.normal_strike_sound, cluster_radius)
+            self.correct_ground((cx, cy), cluster_radius)
+            self.apply_players_damages((cx, cy), cluster_power, cluster_radius)
+        self.correct_tanks_heights()
+
+    def _fire_nuke(self, start_pos, speed, angle, color, weapon):
+        """
+        Massive explosion with a white screen flash.
+        """
+        collision_point = self._fly_shell(start_pos, speed, angle, (255, 255, 100), dot_radius=6)
+        if not collision_point:
+            return
+
+        # Screen flash
+        flash = pygame.surface.Surface((display_width, display_height))
+        flash.fill(white)
+        self.game_display.blit(flash, (0, 0))
+        pygame.display.update()
+        pygame.time.wait(120)
+
+        self._explode(collision_point, weapon)
 
     def update_players(self):
         """
@@ -273,8 +395,12 @@ class GameManager:
                     elif event.key == pygame.K_RIGHT:
                         # change angle
                         angle_change = angle_step
+                    elif event.key == pygame.K_q:
+                        active_tank.cycle_weapon(-1)
+                    elif event.key == pygame.K_e:
+                        active_tank.cycle_weapon(1)
                     elif event.key == pygame.K_SPACE:
-                        self.fire_simple_shell(active_tank)
+                        self.fire_weapon(active_tank)
                         self.generate_wind()
                         self.update_players()
                         active_tank = self.active_player.next_active_tank()
@@ -292,6 +418,7 @@ class GameManager:
             if active_tank:
                 active_tank.show_tank_special()
                 active_tank.show_tanks_power()
+                active_tank.show_weapon_name()
                 active_tank.update_turret_angle(angle_change)
                 active_tank.update_tank_power(power_change)
 

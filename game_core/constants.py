@@ -1,5 +1,6 @@
 from enum import Enum
 from math import pi
+from collections import namedtuple
 
 # set up global variables
 display_width = 1600
@@ -63,3 +64,16 @@ class FontSize(Enum):
     SMALL = 1
     MEDIUM = 2
     LARGE = 3
+
+
+# Weapon definitions
+# shell_type: 'simple' | 'mirv' | 'napalm' | 'nuke'
+WeaponDef = namedtuple('WeaponDef', ['name', 'power', 'radius', 'shell_type'])
+
+WEAPONS = [
+    WeaponDef("Baby Missile",  80,   50, 'simple'),
+    WeaponDef("Missile",      150,   80, 'simple'),
+    WeaponDef("MIRV",         100,   55, 'mirv'),
+    WeaponDef("Napalm",        60,  100, 'napalm'),
+    WeaponDef("Nuke",         250,  180, 'nuke'),
+]

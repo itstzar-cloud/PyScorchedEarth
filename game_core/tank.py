@@ -31,6 +31,7 @@ class Tank:
         self.explosion_sound = pygame.mixer.Sound("assets/music/Explosion3.wav")
         self.fire_sound = pygame.mixer.Sound("assets/music/Cannon1.wav")
         self.special_counter = 0
+        self.weapon_index = 0
 
     def calculate_distance_from_tank_center(self, explosion_point):
         """
@@ -226,6 +227,28 @@ class Tank:
         :return: none
         """
         self.position = list(new_coordinates)
+
+    def get_weapon(self):
+        """
+        Return the currently selected WeaponDef.
+        :return: WeaponDef namedtuple
+        """
+        return WEAPONS[self.weapon_index]
+
+    def cycle_weapon(self, delta: int) -> None:
+        """
+        Cycle through available weapons.
+        :param delta: +1 for next, -1 for previous
+        """
+        self.weapon_index = (self.weapon_index + delta) % len(WEAPONS)
+
+    def show_weapon_name(self) -> None:
+        """
+        Display current weapon name below the power indicator.
+        """
+        weapon = self.get_weapon()
+        (text_surface, rect_size) = sys_text_object(f"[ Q/E ]  {weapon.name}", white, FontSize.SMALL)
+        self.game_display.blit(text_surface, [int(display_width / 2) - int(rect_size.width / 2), 35])
 
     def show_tank_special(self):
         """
