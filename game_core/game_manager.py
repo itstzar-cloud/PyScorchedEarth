@@ -1,11 +1,11 @@
 import pygame
 from shapely.geometry import LineString
-from random import choice
+from random import choice, uniform
 from math import sin, cos
 from game_core.constants import *
 from game_core.ground import Ground
 from game_core.player import Player
-from game_core.utils import animate_ground_sloughing, halt_whole_game, animate_explosion, message_to_screen
+from game_core.utils import animate_ground_sloughing, halt_whole_game, animate_explosion, message_to_screen, sys_text_object
 
 
 class GameManager:
@@ -28,6 +28,7 @@ class GameManager:
         self.ground = None
         self.players_number = player_number
         self.tank_number = tank_number
+        self.wind = 0.0
 
     def reinitialize_players(self):
         """
@@ -45,6 +46,53 @@ class GameManager:
         for player in self.players:
             player.initialize_tanks(init_tanks_positions, self.ground)
         self.active_player = self.players[0]
+        self.generate_wind()
+
+    def generate_wind(self):
+        """
+        Generate a new random wind value for the next turn.
+        Positive = blowing right, negative = blowing left.
+        """
+        self.wind = round(uniform(-max_wind, max_wind), 1)
+
+    def draw_wind_indicator(self):
+        """
+        Draw a wind bar and label at the top-centre of the screen.
+        The bar extends left or right from centre based on wind direction/strength.
+        """
+        cx = display_width // 2
+        cy = 10
+        bar_height = 14
+
+        # Label
+        label_surf, label_rect = sys_text_object("WIND", white)
+        label_rect.right = cx - wind_bar_max_width - 8
+        label_rect.top = cy
+        self.game_display.blit(label_surf, label_rect)
+
+        # Background track
+        pygame.draw.rect(self.game_display, dark_gray,
+                         (cx - wind_bar_max_width, cy, wind_bar_max_width * 2, bar_height))
+
+        # Filled bar (orange)
+        fill_width = int(abs(self.wind) / max_wind * wind_bar_max_width)
+        if self.wind >= 0:
+            pygame.draw.rect(self.game_display, orange,
+                             (cx, cy, fill_width, bar_height))
+        else:
+            pygame.draw.rect(self.game_display, orange,
+                             (cx - fill_width, cy, fill_width, bar_height))
+
+        # Centre divider
+        pygame.draw.line(self.game_display, white,
+                         (cx, cy), (cx, cy + bar_height), 2)
+
+        # Numeric value + direction arrow
+        direction = ">" if self.wind >= 0 else "<"
+        value_surf, value_rect = sys_text_object(f"{direction} {abs(self.wind):.1f}", white)
+        value_rect.left = cx + wind_bar_max_width + 8
+        value_rect.top = cy
+        self.game_display.blit(value_surf, value_rect)
 
     def check_collision(self, prev_shell_position, current_shell_position):
         """
@@ -120,7 +168,7 @@ class GameManager:
 
             prev_shell_position = list(shell_position)
             vertical_speed = -((speed * cos(gun_angle)) - 10 * elapsed_time / 2)
-            horizontal_speed = (speed * sin(gun_angle))
+            horizontal_speed = (speed * sin(gun_angle)) + self.wind
             shell_position[0] += int(horizontal_speed * elapsed_time)
             shell_position[1] += int(vertical_speed * elapsed_time)
             elapsed_time += 0.1
@@ -173,6 +221,7 @@ class GameManager:
         self.ground.draw()
         for player in self.players:
             player.draw_tanks_and_bars()
+        self.draw_wind_indicator()
 
     def run(self):
         """
@@ -226,6 +275,7 @@ class GameManager:
                         angle_change = angle_step
                     elif event.key == pygame.K_SPACE:
                         self.fire_simple_shell(active_tank)
+                        self.generate_wind()
                         self.update_players()
                         active_tank = self.active_player.next_active_tank()
                 elif event.type == pygame.KEYUP:

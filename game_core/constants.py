@@ -41,6 +41,10 @@ shell_speed_step = (max_shell_speed-min_shell_speed)/100
 simple_shell_power = 80
 simple_shell_radius = 50
 
+# wind constants
+max_wind = 5.0          # max wind speed (pixels/frame added to horizontal velocity)
+wind_bar_max_width = 80  # half-width of the wind bar display in pixels
+
 # temporary simple ground
 ground_height_min = 500
 ground_height_max = 800
