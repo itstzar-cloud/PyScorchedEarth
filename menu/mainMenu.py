@@ -44,7 +44,14 @@ displayMenu = GroupedOptions()
 mainMenu = GroupedOptions()
 settingsMenu = GroupedOptions()
 size = constants.display_width, constants.display_height
-screen = pygame.display.set_mode(size)
+
+# Scale the window down to fit the user's actual screen resolution.
+# pygame.SCALED keeps the internal 1600x900 coordinate space intact while
+# rendering it scaled into whatever window size fits the monitor.
+_info = pygame.display.Info()
+_win_w = min(constants.display_width,  _info.current_w)
+_win_h = min(constants.display_height, _info.current_h - 40)  # -40 for taskbar
+screen = pygame.display.set_mode((_win_w, _win_h), pygame.SCALED | pygame.RESIZABLE)
 
 # initialize pictures
 light = pygame.image.load('assets/images/circle.png')

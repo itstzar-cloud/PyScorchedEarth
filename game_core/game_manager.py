@@ -20,7 +20,10 @@ class GameManager:
         """
         self.players = []
         self.active_player = None
-        self.game_display = pygame.display.set_mode((display_width, display_height))
+        _info = pygame.display.Info()
+        _win_w = min(display_width,  _info.current_w)
+        _win_h = min(display_height, _info.current_h - 40)
+        self.game_display = pygame.display.set_mode((_win_w, _win_h), pygame.SCALED | pygame.RESIZABLE)
         pygame.display.set_caption('ScorchedEarth')
         self.clock = pygame.time.Clock()
         self.strike_earth_sound = pygame.mixer.Sound("assets/music/Explosion1.wav")
@@ -174,6 +177,8 @@ class GameManager:
 
             if shell_position[1] > 2 * display_height:
                 return None
+            if shell_position[0] < 0 or shell_position[0] > display_width:
+                return None
 
             collision_point = self.check_collision(prev_pos, shell_position)
             if collision_point:
@@ -244,6 +249,8 @@ class GameManager:
             elapsed_time += 0.1
 
             if shell_position[1] > 2 * display_height:
+                return
+            if shell_position[0] < 0 or shell_position[0] > display_width:
                 return
 
             collision_point = self.check_collision(prev_pos, shell_position)
