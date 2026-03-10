@@ -5,7 +5,9 @@ from menu.option import Option
 from game_core.tank import Tank
 from game_core.constants import *
 
-os.chdir('..')
+# Always resolve relative to the test file so this works both when run
+# directly (python test/tests.py) and via pytest from the project root.
+os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def empty_function():

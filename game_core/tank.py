@@ -22,7 +22,7 @@ class Tank:
         self.position = list(pos)
         self.health_bar_position = health_bar_pos
         self.tank_health = initial_tank_health
-        self.turret_angle = initial_turret_angle + (randint(0, pi/angle_step) * angle_step)
+        self.turret_angle = initial_turret_angle + (randint(0, int(pi / angle_step)) * angle_step)
         self.player_color = color
         self.turret_end_x = 0
         self.turret_end_y = 0
@@ -32,6 +32,8 @@ class Tank:
         self.fire_sound = pygame.mixer.Sound("assets/music/Cannon1.wav")
         self.special_counter = 0
         self.weapon_index = 0
+        self.fuel = tank_fuel
+        self.shield = initial_shield
 
     def calculate_distance_from_tank_center(self, explosion_point):
         """
@@ -85,6 +87,12 @@ class Tank:
         if distance_from_tank < explosion_radius:
             damage = int(((explosion_radius - distance_from_tank) / explosion_radius) * explosion_power)
 
+        # Shield absorbs incoming damage before health is affected
+        if self.shield > 0 and damage > 0:
+            absorbed = min(self.shield, damage)
+            self.shield -= absorbed
+            damage -= absorbed
+
         self.tank_health = max(self.tank_health - damage, 0)
         if self.tank_health == 0:
             return True
@@ -125,6 +133,27 @@ class Tank:
         :return: turret end coordinates as tuple
         """
         return self.turret_end_x, self.turret_end_y
+
+    def _draw_parachute(self, color):
+        """
+        Draw a simple parachute canopy + strings above the tank in the given colour.
+        """
+        x = self.position[0]
+        y = self.position[1]
+        canopy_r = 25
+        # Canopy top sits 18 px above the tank body top
+        canopy_top_y = y - tank_height - canopy_r - 18
+        # Semicircular canopy
+        pygame.draw.arc(self.game_display, color,
+                        (x - canopy_r, canopy_top_y, canopy_r * 2, canopy_r * 2),
+                        0, pi, 3)
+        # Two strings from canopy rim to tank top
+        pygame.draw.line(self.game_display, color,
+                         (x - canopy_r, canopy_top_y + canopy_r),
+                         (x - int(tank_width / 4), y - tank_height), 1)
+        pygame.draw.line(self.game_display, color,
+                         (x + canopy_r, canopy_top_y + canopy_r),
+                         (x + int(tank_width / 4), y - tank_height), 1)
 
     def update_tank_coordinates(self, move_tank):
         """
@@ -176,7 +205,7 @@ class Tank:
         :return: none
         """
         (text_surface, rect_size) = sys_text_object("Power: " + str(self.tank_power) + "%", white, FontSize.SMALL)
-        self.game_display.blit(text_surface, [int(display_width / 2) - int(rect_size.width / 2), 10])
+        self.game_display.blit(text_surface, [int(display_width / 2) - int(rect_size.width / 2), 28])
 
     def draw_health_bar(self, active=False):
         """
@@ -198,6 +227,13 @@ class Tank:
                          white,
                          (self.health_bar_position[0], self.health_bar_position[1], 100, 25),
                          2)
+        # Shield bar (blue, drawn below the health bar; outline always visible)
+        if self.shield > 0:
+            pygame.draw.rect(self.game_display, (0, 120, 255),
+                             (self.health_bar_position[0], self.health_bar_position[1] + 28,
+                              self.shield, 10))
+        pygame.draw.rect(self.game_display, (100, 150, 255),
+                         (self.health_bar_position[0], self.health_bar_position[1] + 28, 100, 10), 1)
 
     def self_destruct(self):
         """
@@ -248,7 +284,20 @@ class Tank:
         """
         weapon = self.get_weapon()
         (text_surface, rect_size) = sys_text_object(f"[ Q/E ]  {weapon.name}", white, FontSize.SMALL)
-        self.game_display.blit(text_surface, [int(display_width / 2) - int(rect_size.width / 2), 35])
+        self.game_display.blit(text_surface, [int(display_width / 2) - int(rect_size.width / 2), 48])
+
+    def show_fuel(self) -> None:
+        """
+        Display remaining movement fuel below the weapon name.
+        """
+        (text_surface, rect_size) = sys_text_object(f"Fuel: {max(0, self.fuel)}", white, FontSize.SMALL)
+        self.game_display.blit(text_surface, [int(display_width / 2) - int(rect_size.width / 2), 68])
+
+    def refuel(self) -> None:
+        """
+        Restore full fuel at the start of a new turn.
+        """
+        self.fuel = tank_fuel
 
     def show_tank_special(self):
         """
@@ -266,22 +315,34 @@ class Tank:
 
     def animate_tank_fall(self, desirable_height):
         """
-        Animate tank falling
-        :param desirable_height: new height
+        Animate tank falling.  Deploys a parachute if the drop is large enough.
+        :param desirable_height: target y coordinate (pixels, pygame down-positive)
         :return: none
         """
+        fall_distance = desirable_height - self.position[1]
+        use_parachute = fall_distance > parachute_threshold
         clock = pygame.time.Clock()
         while self.position[1] != desirable_height:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     halt_whole_game()
 
+            # Erase current position (draw in black)
             temp_color = self.player_color
             self.player_color = black
             self.draw_tank()
+            if use_parachute:
+                self._draw_parachute(black)
+
+            # Move one pixel downward
             self.position[1] += 1
+
+            # Draw at new position
             self.player_color = temp_color
             self.draw_tank()
+            if use_parachute:
+                self._draw_parachute(self.player_color)
 
             pygame.display.update()
-            clock.tick(100)
+            # Slower fall speed when parachute is deployed
+            clock.tick(60 if use_parachute else 100)

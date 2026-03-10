@@ -46,6 +46,15 @@ simple_shell_radius = 50
 max_wind = 5.0          # max wind speed (pixels/frame added to horizontal velocity)
 wind_bar_max_width = 80  # half-width of the wind bar display in pixels
 
+# movement
+tank_fuel = 50             # fuel units per turn (consumed 1 per move_step call)
+
+# parachute
+parachute_threshold = 30   # pixels a tank must fall before parachute deploys
+
+# shields
+initial_shield = 30        # starting shield HP (will become 0 once shop is added)
+
 # temporary simple ground
 ground_height_min = 500
 ground_height_max = 800

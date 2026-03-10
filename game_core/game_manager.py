@@ -150,6 +150,16 @@ class GameManager:
         for player in self.players:
             player.correct_tanks_heights(self.ground)
 
+    def _get_ground_height_for_tank(self, x):
+        """
+        Return the average ground height under the tank body at horizontal position x.
+        :param x: tank centre x coordinate
+        :return: ground y pixel (higher value = lower on screen)
+        """
+        heights = [self.ground.get_ground_height_at_point(px)
+                   for px in range(x - int(tank_width / 2), x + int(tank_width / 2))]
+        return int(sum(heights) / len(heights))
+
     def _fly_shell(self, start_pos, speed, angle, color, dot_radius=4):
         """
         Animate a single shell in flight. Returns collision point or None if out of bounds.
@@ -365,6 +375,7 @@ class GameManager:
 
         angle_change = 0
         power_change = 0
+        move_change = 0
 
         while not game_exit:
             if game_over:
@@ -381,6 +392,7 @@ class GameManager:
                             if event.key == pygame.K_s:
                                 self.reinitialize_players()
                                 active_tank = self.players[0].next_active_tank()
+                                move_change = 0
                                 game_exit = False
                                 game_over = False
                                 break
@@ -402,6 +414,10 @@ class GameManager:
                     elif event.key == pygame.K_RIGHT:
                         # change angle
                         angle_change = angle_step
+                    elif event.key == pygame.K_a:
+                        move_change = -1
+                    elif event.key == pygame.K_d:
+                        move_change = 1
                     elif event.key == pygame.K_q:
                         active_tank.cycle_weapon(-1)
                     elif event.key == pygame.K_e:
@@ -411,11 +427,16 @@ class GameManager:
                         self.generate_wind()
                         self.update_players()
                         active_tank = self.active_player.next_active_tank()
+                        move_change = 0
+                        if active_tank:
+                            active_tank.refuel()
                 elif event.type == pygame.KEYUP:
                     if event.key == pygame.K_RIGHT or event.key == pygame.K_LEFT:
                         angle_change = 0
                     elif event.key == pygame.K_UP or event.key == pygame.K_DOWN:
                         power_change = 0
+                    elif event.key == pygame.K_a or event.key == pygame.K_d:
+                        move_change = 0
 
             self.draw_all()
 
@@ -426,8 +447,18 @@ class GameManager:
                 active_tank.show_tank_special()
                 active_tank.show_tanks_power()
                 active_tank.show_weapon_name()
+                active_tank.show_fuel()
                 active_tank.update_turret_angle(angle_change)
                 active_tank.update_tank_power(power_change)
+                # Tank movement (A / D) — consumed fuel limits travel distance
+                if move_change != 0 and active_tank.fuel > 0:
+                    prev_x = active_tank.get_tank_position()[0]
+                    active_tank.update_tank_coordinates(move_step * move_change)
+                    new_x = active_tank.get_tank_position()[0]
+                    if new_x != prev_x:
+                        active_tank.fuel = max(0, active_tank.fuel - 1)
+                        opt_h = self._get_ground_height_for_tank(new_x)
+                        active_tank.update_tank_position((new_x, opt_h - full_tank_height))
 
             pygame.display.update()
             self.clock.tick(fps)
